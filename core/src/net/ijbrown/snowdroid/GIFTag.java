@@ -20,13 +20,13 @@ package net.ijbrown.snowdroid;
  */
 public class GIFTag
 {
-    public void parse(byte[] data, int idx)
+    public void parse(ByteBuffer data, int idx)
     {
-        int low32 = DataUtil.getLEInt(data, idx);
+        int low32 = data.getLEInt(idx);
         nloop = low32 & 0x7FFF;
         eop = (low32 & 0x8000) == 0x8000;
 
-        int next32 = DataUtil.getLEInt(data, idx + 4);
+        int next32 = data.getLEInt(idx + 4);
 
         // bit 32 is bit 0 of next 32
         pre = ((next32 >> (46 - 32)) & 1) == 1;
@@ -38,8 +38,8 @@ public class GIFTag
         if (0 == nreg){
             nreg = 16;
         }
-        int regs64 = DataUtil.getLEInt(data, idx + 8);
-        int regs96 = DataUtil.getLEInt(data, idx + 12);
+        int regs64 = data.getLEInt(idx + 8);
+        int regs96 = data.getLEInt(idx + 12);
 
         regs = new int[nreg];
         for (int reg=0; reg < nreg; ++reg){

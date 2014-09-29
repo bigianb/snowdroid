@@ -19,16 +19,12 @@ public class Lump
     {
         this.data = buffer.data;
         this.startOffset = buffer.startOffset;
+        buildDirectory();
     }
 
     public ByteBuffer findEntry(String name)
     {
         return directory.get(name);
-    }
-
-    public byte[] getData()
-    {
-        return data;
     }
 
     public void buildDirectory()
@@ -43,7 +39,7 @@ public class Lump
             int subOffset = DataUtil.getLEInt(data, headerOffset + 0x38);
             int subLen = DataUtil.getLEInt(data, headerOffset + 0x3C);
 
-            directory.put(subfileName, new ByteBuffer(data, subOffset, subLen));
+            directory.put(subfileName, new ByteBuffer(data, startOffset + subOffset, subLen));
         }
     }
 
