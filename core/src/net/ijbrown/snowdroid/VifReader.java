@@ -1,5 +1,8 @@
 package net.ijbrown.snowdroid;
 
+import com.badlogic.gdx.graphics.g3d.Model;
+import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+
 import java.io.*;
 import java.util.AbstractCollection;
 import java.util.ArrayList;
@@ -25,18 +28,24 @@ public class VifReader
         new VifReader().readVif(vifData);
     }
 
-    public void readVif(ByteBuffer vifData)
+    public Model readVif(ByteBuffer vifData)
     {
         int numMeshes = vifData.getUnsignedByte(0x12);
         int offset1 = vifData.getLEInt(0x24);
 
+        ModelBuilder modelBuilder = new ModelBuilder();
+        modelBuilder.begin();
         for (int meshNum = 0; meshNum < numMeshes; ++meshNum) {
             int offsetVerts = vifData.getLEInt(0x28 + meshNum * 4);
             int offsetEndVerts = vifData.getLEInt(0x2C + meshNum * 4);
             List<Chunk> chunks = readChunks(vifData, offsetVerts, offsetEndVerts);
- //           Mesh* mesh = chunksToMesh(chunks);
- //           meshes.add(mesh);
+            processChunks(modelBuilder, chunks);
         }
+        return modelBuilder.end();
+    }
+
+    private void processChunks(ModelBuilder modelBuilder, List<Chunk> chunks)
+    {
 
     }
 
@@ -79,6 +88,20 @@ public class VifReader
         public short v;
     }
 
+    private class VertexWeight
+    {
+        public int startVertex;
+        public int endVertex;
+        public int bone1;
+        public int bone2;
+        public int bone3;
+        public int bone4;
+        public int boneWeight1;
+        public int boneWeight2;
+        public int boneWeight3;
+        public int boneWeight4;
+    }
+
     private class Chunk
     {
         public int mscalID = 0;
@@ -89,6 +112,7 @@ public class VifReader
         public List<VLoc> vlocs = new ArrayList<VLoc>();
         public List<UV> uvs = new ArrayList<UV>();
         public List<GIFTag> directGifTags = new ArrayList<GIFTag>(1);
+        public List<VertexWeight> vertexWeights = new ArrayList<VertexWeight>();
         public int[] extraVlocs;
     }
 
@@ -101,7 +125,7 @@ public class VifReader
     private static final int STMASK_CMD = 0x20;
     private static final int DIRECT_CMD = 0x50;
 
-    public List<Chunk> readChunks(ByteBuffer data, int offset, int endOffset)
+    private List<Chunk> readChunks(ByteBuffer data, int offset, int endOffset)
     {
         List<Chunk> chunks = new ArrayList<Chunk>();
         Chunk currentChunk = new Chunk();
@@ -230,10 +254,10 @@ public class VifReader
                             if (usn) {
                                 currentChunk.extraVlocs = new int[numShorts];
                                 for (int i = 0; i < numCommand; ++i) {
-                                    currentChunk->extraVlocs[i*4] = DataUtil::getLEUShort(data, offset + i * 8);
-                                    currentChunk->extraVlocs[i * 4 + 1] = DataUtil::getLEUShort(data, offset + i * 8 + 2);
-                                    currentChunk->extraVlocs[i * 4 + 2] = DataUtil::getLEUShort(data, offset + i * 8 + 4);
-                                    currentChunk->extraVlocs[i * 4 + 3] = DataUtil::getLEUShort(data, offset + i * 8 + 6);
+                                    currentChunk.extraVlocs[i*4] = data.getLEUShort(offset + i * 8);
+                                    currentChunk.extraVlocs[i * 4 + 1] = data.getLEUShort(offset + i * 8 + 2);
+                                    currentChunk.extraVlocs[i * 4 + 2] = data.getLEUShort(offset + i * 8 + 4);
+                                    currentChunk.extraVlocs[i * 4 + 3] = data.getLEUShort(offset + i * 8 + 6);
                                 }
                             } else {
 //                                Logger::getLogger()->log("Unsupported tag\n");
@@ -245,28 +269,28 @@ public class VifReader
                             int numBytes = numCommand * 4;
                             int curVertex=0;
                             for (int i = 0; i < numCommand; ++i) {
-                                VertexWeight vw;
+                                VertexWeight vw = new VertexWeight();
                                 vw.startVertex = curVertex;
-                                vw.bone1 = data[offset++] / 4;
-                                vw.boneWeight1 = data[offset++];
-                                vw.bone2 = data[offset++];
+                                vw.bone1 = data.getByte(offset++) / 4;
+                                vw.boneWeight1 = data.getByte(offset++);
+                                vw.bone2 = data.getByte(offset++);
                                 if (vw.bone2 == 0xFF) {
                                     // Single bone
                                     vw.boneWeight2 = 0;
-                                    int count = data[offset++];
+                                    int count = data.getByte(offset++);
                                     curVertex += count;
                                 } else {
                                     vw.bone2 /= 4;
-                                    vw.boneWeight2 = data[offset++];
+                                    vw.boneWeight2 = data.getByte(offset++);
                                     ++curVertex;
 
                                     if (vw.boneWeight1 + vw.boneWeight2 < 0xFF)
                                     {
                                         ++i;
-                                        vw.bone3 = data[offset++] / 4;
-                                        vw.boneWeight3 = data[offset++];
-                                        vw.bone4 = data[offset++];
-                                        int bw4 = data[offset++];
+                                        vw.bone3 = data.getByte(offset++) / 4;
+                                        vw.boneWeight3 = data.getByte(offset++);
+                                        vw.bone4 = data.getByte(offset++);
+                                        int bw4 = data.getByte(offset++);
                                         if (vw.bone4 != 0xFF)
                                         {
                                             vw.bone4 /= 4;
@@ -281,7 +305,7 @@ public class VifReader
 
                                 }
                                 vw.endVertex = curVertex - 1;
-                                currentChunk->vertexWeights.push_back(vw);
+                                currentChunk.vertexWeights.add(vw);
                             }
                         } else {
                             System.out.println("Unknown vnvl combination: vn=" + vn + ", vl=" + vl);
