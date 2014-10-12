@@ -6,13 +6,22 @@ import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 
+import java.io.IOException;
+
 public class Main extends ApplicationAdapter {
 	SpriteBatch batch;
 	Texture img;
 	
 	@Override
 	public void create () {
-		batch = new SpriteBatch();
+
+        try {
+            VifReader.main(new String[]{""});
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        batch = new SpriteBatch();
 		img = new Texture("badlogic.jpg");
 	}
 

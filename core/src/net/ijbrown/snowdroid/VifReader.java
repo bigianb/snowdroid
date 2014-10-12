@@ -1,10 +1,17 @@
 package net.ijbrown.snowdroid;
 
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.VertexAttribute;
+import com.badlogic.gdx.graphics.VertexAttributes;
+import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.Model;
+import com.badlogic.gdx.graphics.g3d.utils.MeshPartBuilder;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
 
-import java.io.*;
-import java.util.AbstractCollection;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,6 +20,15 @@ import java.util.List;
  */
 public class VifReader
 {
+    private static final int NOP_CMD = 0;
+    private static final int STCYCL_CMD = 1;
+    private static final int ITOP_CMD = 4;
+    private static final int STMOD_CMD = 5;
+    private static final int FLUSH_CMD = 0x11;
+    private static final int MSCAL_CMD = 0x14;
+    private static final int STMASK_CMD = 0x20;
+    private static final int DIRECT_CMD = 0x50;
+
     public static void main(String[] args) throws IOException
     {
         String dataDir = "/emu/bgda/BG/DATA/";
@@ -33,97 +49,138 @@ public class VifReader
         int numMeshes = vifData.getUnsignedByte(0x12);
         int offset1 = vifData.getLEInt(0x24);
 
+        // TODO: track this better. Pass it in as a parameter.
+        Material material = new Material();
+
         ModelBuilder modelBuilder = new ModelBuilder();
         modelBuilder.begin();
         for (int meshNum = 0; meshNum < numMeshes; ++meshNum) {
             int offsetVerts = vifData.getLEInt(0x28 + meshNum * 4);
             int offsetEndVerts = vifData.getLEInt(0x2C + meshNum * 4);
             List<Chunk> chunks = readChunks(vifData, offsetVerts, offsetEndVerts);
-            processChunks(modelBuilder, chunks);
+            processChunks(modelBuilder, "mesh" + meshNum, material, chunks);
         }
         return modelBuilder.end();
     }
 
-    private void processChunks(ModelBuilder modelBuilder, List<Chunk> chunks)
+    private void processChunks(ModelBuilder modelBuilder, String id, Material material, List<Chunk> chunks)
     {
-
-    }
-
-    private class Vertex
-    {
-        public short x;
-        public short y;
-        public short z;
-    }
-
-    private class ByteVector
-    {
-        public byte x;
-        public byte y;
-        public byte z;
-    }
-
-    private class VLoc
-    {
-        public int v1;
-        public int v2;
-        public int v3;
-
-        @Override
-        public String toString()
-        {
-            return HexUtil.formatHexUShort(v1) + ", " + HexUtil.formatHexUShort(v2) + ", " + HexUtil.formatHexUShort(v3);
+        int numVertices = 0;
+        int numWeights = 0;
+        for (Chunk chunk : chunks) {
+            numVertices += chunk.gifTag0.nloop;
+            numWeights += chunk.vertexWeights.size();
         }
-    }
+        VertexAttributes vertexAttributes;
+        if (numWeights > 0) {
+            vertexAttributes = new VertexAttributes(VertexAttribute.Position(),
+                                                    VertexAttribute.Normal(),
+                                                    VertexAttribute.TexCoords(0),
+                                                    VertexAttribute.BoneWeight(0));
+        } else {
+            vertexAttributes = new VertexAttributes(VertexAttribute.Position(),
+                                                    VertexAttribute.Normal(),
+                                                    VertexAttribute.TexCoords(0));
+        }
+        // tri-strip would be more efficient, but we would need to figure out the winding rule
+        // as it is not consistent in the vif files.
+        MeshPartBuilder meshBuilder = modelBuilder.part(id, GL20.GL_TRIANGLES, vertexAttributes, material);
 
-    private class UV
-    {
-        public UV(short u, short v)
-        {
-            this.u = u;
-            this.v = v;
+        // The vif format can specify multiple uvs per vertex, so we need to pre-process and
+        // duplicate where necessary.
+        List<Vector3> positions = new ArrayList<Vector3>(numVertices * 2);
+        List<Vector3> normals = new ArrayList<Vector3>(numVertices * 2);
+        List<Vector2> uvs = new ArrayList<Vector2>(numVertices * 2);
+        List<VertexWeight> vertexWeights = new ArrayList<VertexWeight>(numWeights);
+        int vstart = 0;
+        for (Chunk chunk : chunks) {
+            if ((chunk.gifTag0.prim & 0x07) != 4) {
+                throw new RuntimeException("Can only deal with tri-strips");
+            }
+            int vnum = vstart;
+            for (int vertexNum = 0; vertexNum < chunk.vertices.size(); ++vertexNum) {
+                Vertex v = chunk.vertices.get(vertexNum);
+                positions.add(new Vector3(v.x / 16.0f, v.y / 16.0f, v.z / 16.0f));
+                ByteVector n = chunk.normals.get(vertexNum);
+                normals.add(new Vector3(n.x / 127.0f, n.y / 127.0f, n.z / 127.0f));
+                uvs.add(null);
+            }
+            int numChunkVertices = chunk.vertices.size();
+            for (final VertexWeight vw : chunk.vertexWeights) {
+                if (vw.startVertex <= (numChunkVertices - 1)) {
+                    VertexWeight vwAdjusted = new VertexWeight(vw);
+                    vwAdjusted.startVertex += vstart;
+                    if (vwAdjusted.endVertex >= numChunkVertices) {
+                        vwAdjusted.endVertex = numChunkVertices - 1;
+                    }
+                    vwAdjusted.endVertex += vstart;
+                    vertexWeights.add(vwAdjusted);
+                }
+            }
+            int vstripLen = chunk.gifTag0.nloop;
+            int[] vstrip = new int[vstripLen];
+            int regsPerVertex = chunk.gifTag0.nreg;
+            int numVlocs = chunk.vlocs.size();
+            for (int vlocIndx = 2; vlocIndx < numVlocs; ++vlocIndx) {
+                int v = vlocIndx - 2;
+                VLoc vloc = chunk.vlocs.get(vlocIndx);
+                int stripIdx2 = (vloc.v2 & 0x1FF) / regsPerVertex;
+                int stripIdx3 = (vloc.v3 & 0x1FF) / regsPerVertex;
+                if (stripIdx3 < vstripLen && stripIdx2 < vstripLen) {
+                    vstrip[stripIdx3] = vstrip[stripIdx2] & 0x1FF;
+
+                    boolean skip2 = (vloc.v3 & 0x8000) == 0x8000;
+                    if (skip2) {
+                        vstrip[stripIdx3] |= 0x8000;
+                    }
+                }
+                int stripIdx = (vloc.v1 & 0x1FF) / regsPerVertex;
+                boolean skip = (vloc.v1 & 0x8000) == 0x8000;
+
+                if (v < numChunkVertices && stripIdx < vstripLen) {
+                    vstrip[stripIdx] = skip ? (v | 0x8000) : v;
+                }
+            }
+            int numExtraVlocs = chunk.extraVlocs == null ? 0 : chunk.extraVlocs[0];
+            for (int extraVloc = 0; extraVloc < numExtraVlocs; ++extraVloc) {
+                int idx = extraVloc * 4 + 4;
+                int stripIndxSrc = (chunk.extraVlocs[idx] & 0x1FF) / regsPerVertex;
+                int stripIndxDest = (chunk.extraVlocs[idx + 1] & 0x1FF) / regsPerVertex;
+                vstrip[stripIndxDest] = (chunk.extraVlocs[idx + 1] & 0x8000) | (vstrip[stripIndxSrc] & 0x1FF);
+
+                stripIndxSrc = (chunk.extraVlocs[idx + 2] & 0x1FF) / regsPerVertex;
+                stripIndxDest = (chunk.extraVlocs[idx + 3] & 0x1FF) / regsPerVertex;
+                vstrip[stripIndxDest] = (chunk.extraVlocs[idx + 3] & 0x8000) | (vstrip[stripIndxSrc] & 0x1FF);
+            }
+            for (int i=2; i<vstripLen; ++i){
+                int vidx1 = vstart + (vstrip[i - 2] & 0xFF);
+                int vidx2 = vstart + (vstrip[i - 1] & 0xFF);
+                int vidx3 = vstart + (vstrip[i] & 0xFF);
+
+                int uv1 = i - 2;
+                int uv2 = i - 1;
+                int uv3 = i;
+
+                if ((vstrip[i] & 0x8000) == 0) {
+                    Vector2 vuv1 = new Vector2(chunk.uvs.get(uv1).u / 16.0f, chunk.uvs.get(uv1).v / 16.0f);
+                    Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u / 16.0f, chunk.uvs.get(uv2).v / 16.0f);
+                    Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u / 16.0f, chunk.uvs.get(uv3).v / 16.0f);
+                    if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)){
+                        // The is more than one uv assignment to this vertex, so we need to duplicate it
+                    }
+                    if (uvs.get(vidx2) != null && !uvs.get(vidx2).equals(vuv2)){
+                        // The is more than one uv assignment to this vertex, so we need to duplicate it
+                    }
+                    if (uvs.get(vidx3) != null && !uvs.get(vidx3).equals(vuv3)){
+                        // The is more than one uv assignment to this vertex, so we need to duplicate it
+                    }
+
+                }
+            }
+            vstart += numChunkVertices;
         }
 
-        public short u;
-        public short v;
     }
-
-    private class VertexWeight
-    {
-        public int startVertex;
-        public int endVertex;
-        public int bone1;
-        public int bone2;
-        public int bone3;
-        public int bone4;
-        public int boneWeight1;
-        public int boneWeight2;
-        public int boneWeight3;
-        public int boneWeight4;
-    }
-
-    private class Chunk
-    {
-        public int mscalID = 0;
-        public GIFTag gifTag0 = null;
-        public GIFTag gifTag1 = null;
-        public List<Vertex> vertices = new ArrayList<Vertex>();
-        public List<ByteVector> normals = new ArrayList<ByteVector>();
-        public List<VLoc> vlocs = new ArrayList<VLoc>();
-        public List<UV> uvs = new ArrayList<UV>();
-        public List<GIFTag> directGifTags = new ArrayList<GIFTag>(1);
-        public List<VertexWeight> vertexWeights = new ArrayList<VertexWeight>();
-        public int[] extraVlocs;
-    }
-
-    private static final int NOP_CMD = 0;
-    private static final int STCYCL_CMD = 1;
-    private static final int ITOP_CMD = 4;
-    private static final int STMOD_CMD = 5;
-    private static final int FLUSH_CMD = 0x11;
-    private static final int MSCAL_CMD = 0x14;
-    private static final int STMASK_CMD = 0x20;
-    private static final int DIRECT_CMD = 0x50;
 
     private List<Chunk> readChunks(ByteBuffer data, int offset, int endOffset)
     {
@@ -158,10 +215,9 @@ public class VifReader
                     break;
 
                 case DIRECT_CMD:
-                    for (int i = 0; i < immCommand; i++)
-                    {
+                    for (int i = 0; i < immCommand; i++) {
                         GIFTag gifTag = new GIFTag();
-                        gifTag.parse(data, offset + 4 + i*16);
+                        gifTag.parse(data, offset + 4 + i * 16);
                         currentChunk.directGifTags.add(gifTag);
                     }
 
@@ -254,7 +310,7 @@ public class VifReader
                             if (usn) {
                                 currentChunk.extraVlocs = new int[numShorts];
                                 for (int i = 0; i < numCommand; ++i) {
-                                    currentChunk.extraVlocs[i*4] = data.getLEUShort(offset + i * 8);
+                                    currentChunk.extraVlocs[i * 4] = data.getLEUShort(offset + i * 8);
                                     currentChunk.extraVlocs[i * 4 + 1] = data.getLEUShort(offset + i * 8 + 2);
                                     currentChunk.extraVlocs[i * 4 + 2] = data.getLEUShort(offset + i * 8 + 4);
                                     currentChunk.extraVlocs[i * 4 + 3] = data.getLEUShort(offset + i * 8 + 6);
@@ -267,7 +323,7 @@ public class VifReader
                         } else if (vn == 3 && vl == 2) {
                             // v4-8
                             int numBytes = numCommand * 4;
-                            int curVertex=0;
+                            int curVertex = 0;
                             for (int i = 0; i < numCommand; ++i) {
                                 VertexWeight vw = new VertexWeight();
                                 vw.startVertex = curVertex;
@@ -284,15 +340,13 @@ public class VifReader
                                     vw.boneWeight2 = data.getByte(offset++);
                                     ++curVertex;
 
-                                    if (vw.boneWeight1 + vw.boneWeight2 < 0xFF)
-                                    {
+                                    if (vw.boneWeight1 + vw.boneWeight2 < 0xFF) {
                                         ++i;
                                         vw.bone3 = data.getByte(offset++) / 4;
                                         vw.boneWeight3 = data.getByte(offset++);
                                         vw.bone4 = data.getByte(offset++);
                                         int bw4 = data.getByte(offset++);
-                                        if (vw.bone4 != 0xFF)
-                                        {
+                                        if (vw.bone4 != 0xFF) {
                                             vw.bone4 /= 4;
                                             vw.boneWeight4 = bw4;
                                         }
@@ -319,6 +373,90 @@ public class VifReader
             }
         }
         return chunks;
+    }
+
+    private class Vertex
+    {
+        public short x;
+        public short y;
+        public short z;
+    }
+
+    private class ByteVector
+    {
+        public byte x;
+        public byte y;
+        public byte z;
+    }
+
+    private class VLoc
+    {
+        public int v1;
+        public int v2;
+        public int v3;
+
+        @Override
+        public String toString()
+        {
+            return HexUtil.formatHexUShort(v1) + ", " + HexUtil.formatHexUShort(v2) + ", " + HexUtil.formatHexUShort(
+                    v3);
+        }
+    }
+
+    private class UV
+    {
+        public short u;
+        public short v;
+
+        public UV(short u, short v)
+        {
+            this.u = u;
+            this.v = v;
+        }
+    }
+
+    private class VertexWeight
+    {
+        public int startVertex;
+        public int endVertex;
+        public int bone1;
+        public int bone2;
+        public int bone3;
+        public int bone4;
+        public int boneWeight1;
+        public int boneWeight2;
+        public int boneWeight3;
+        public int boneWeight4;
+
+        public VertexWeight() {}
+
+        public VertexWeight(final VertexWeight vw)
+        {
+            startVertex = vw.startVertex;
+            endVertex = vw.endVertex;
+            bone1 = vw.bone1;
+            bone2 = vw.bone2;
+            bone3 = vw.bone3;
+            bone4 = vw.bone4;
+            boneWeight1 = vw.boneWeight1;
+            boneWeight2 = vw.boneWeight2;
+            boneWeight3 = vw.boneWeight3;
+            boneWeight4 = vw.boneWeight4;
+        }
+    }
+
+    private class Chunk
+    {
+        public int mscalID = 0;
+        public GIFTag gifTag0 = null;
+        public GIFTag gifTag1 = null;
+        public List<Vertex> vertices = new ArrayList<Vertex>();
+        public List<ByteVector> normals = new ArrayList<ByteVector>();
+        public List<VLoc> vlocs = new ArrayList<VLoc>();
+        public List<UV> uvs = new ArrayList<UV>();
+        public List<GIFTag> directGifTags = new ArrayList<GIFTag>(1);
+        public List<VertexWeight> vertexWeights = new ArrayList<VertexWeight>();
+        public int[] extraVlocs;
     }
 }
 
