@@ -1,5 +1,6 @@
 package net.ijbrown.snowdroid;
 
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.VertexAttribute;
 import com.badlogic.gdx.graphics.VertexAttributes;
@@ -16,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Created by Ian on 29/09/2014.
+ * Reads a .vif file, converts it to a libgdx model.
  */
 public class VifReader
 {
@@ -29,28 +30,10 @@ public class VifReader
     private static final int STMASK_CMD = 0x20;
     private static final int DIRECT_CMD = 0x50;
 
-    public static void main(String[] args) throws IOException
-    {
-        String dataDir = "/emu/bgda/BG/DATA/";
-
-        File file = new File(dataDir, "TAVERN.GOB");
-        byte[] gobData = FileUtil.read(file);
-        Gob gob = new Gob(gobData);
-
-        ByteBuffer mainLumpData = gob.findEntry("bartley.lmp");
-        Lump mainLump = new Lump(mainLumpData);
-
-        ByteBuffer vifData = mainLump.findEntry("shopkeep1.vif");
-        new VifReader().readVif(vifData);
-    }
-
-    public Model readVif(ByteBuffer vifData)
+    public Model readVif(ByteBuffer vifData, Material material)
     {
         int numMeshes = vifData.getUnsignedByte(0x12);
         int offset1 = vifData.getLEInt(0x24);
-
-        // TODO: track this better. Pass it in as a parameter.
-        Material material = new Material();
 
         ModelBuilder modelBuilder = new ModelBuilder();
         modelBuilder.begin();
@@ -71,6 +54,7 @@ public class VifReader
             numVertices += chunk.gifTag0.nloop;
             numWeights += chunk.vertexWeights.size();
         }
+
         VertexAttributes vertexAttributes;
         if (numWeights > 0) {
             vertexAttributes = new VertexAttributes(VertexAttribute.Position(),
@@ -82,6 +66,7 @@ public class VifReader
                                                     VertexAttribute.Normal(),
                                                     VertexAttribute.TexCoords(0));
         }
+
         // tri-strip would be more efficient, but we would need to figure out the winding rule
         // as it is not consistent in the vif files.
         MeshPartBuilder meshBuilder = modelBuilder.part(id, GL20.GL_TRIANGLES, vertexAttributes, material);
@@ -97,7 +82,6 @@ public class VifReader
             if ((chunk.gifTag0.prim & 0x07) != 4) {
                 throw new RuntimeException("Can only deal with tri-strips");
             }
-            int vnum = vstart;
             for (int vertexNum = 0; vertexNum < chunk.vertices.size(); ++vertexNum) {
                 Vertex v = chunk.vertices.get(vertexNum);
                 positions.add(new Vector3(v.x / 16.0f, v.y / 16.0f, v.z / 16.0f));
@@ -105,7 +89,7 @@ public class VifReader
                 normals.add(new Vector3(n.x / 127.0f, n.y / 127.0f, n.z / 127.0f));
                 uvs.add(null);
             }
-            int numChunkVertices = chunk.vertices.size();
+            final int numChunkVertices = chunk.vertices.size();
             for (final VertexWeight vw : chunk.vertexWeights) {
                 if (vw.startVertex <= (numChunkVertices - 1)) {
                     VertexWeight vwAdjusted = new VertexWeight(vw);
@@ -166,20 +150,82 @@ public class VifReader
                     Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u / 16.0f, chunk.uvs.get(uv2).v / 16.0f);
                     Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u / 16.0f, chunk.uvs.get(uv3).v / 16.0f);
                     if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)){
-                        // The is more than one uv assignment to this vertex, so we need to duplicate it
+                        // There is more than one uv assignment to this vertex, so we need to duplicate it
+                        int originalVIdx = vidx1;
+                        vidx1 = positions.size();
+                        positions.add(positions.get(originalVIdx));
+                        normals.add(normals.get(originalVIdx));
+                        uvs.add(null);
+                        VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
+                        if (weight.boneWeight1 > 0)
+                        {
+                            VertexWeight vw = new VertexWeight(weight);
+                            vw.startVertex = vidx1;
+                            vw.endVertex = vidx1;
+                            vertexWeights.add(vw);
+                        }
                     }
                     if (uvs.get(vidx2) != null && !uvs.get(vidx2).equals(vuv2)){
-                        // The is more than one uv assignment to this vertex, so we need to duplicate it
+                        // There is more than one uv assignment to this vertex, so we need to duplicate it
+                        int originalVIdx = vidx2;
+                        vidx2 = positions.size();
+                        positions.add(positions.get(originalVIdx));
+                        normals.add(normals.get(originalVIdx));
+                        uvs.add(null);
+
+                        VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
+                        if (weight.boneWeight1 > 0)
+                        {
+                            VertexWeight vw = new VertexWeight(weight);
+                            vw.startVertex = vidx2;
+                            vw.endVertex = vidx2;
+                            vertexWeights.add(vw);
+                        }
                     }
                     if (uvs.get(vidx3) != null && !uvs.get(vidx3).equals(vuv3)){
-                        // The is more than one uv assignment to this vertex, so we need to duplicate it
-                    }
+                        // There is more than one uv assignment to this vertex, so we need to duplicate it
+                        int originalVIdx = vidx3;
+                        vidx3 = positions.size();
+                        positions.add(positions.get(originalVIdx));
+                        normals.add(normals.get(originalVIdx));
+                        uvs.add(null);
 
+                        VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
+                        if (weight.boneWeight1 > 0)
+                        {
+                            VertexWeight vw = new VertexWeight(weight);
+                            vw.startVertex = vidx3;
+                            vw.endVertex = vidx3;
+                            vertexWeights.add(vw);
+                        }
+                    }
+                    uvs.set(vidx1, vuv1);
+                    uvs.set(vidx2, vuv2);
+                    uvs.set(vidx3, vuv3);
+
+                    meshBuilder.triangle((short)vidx1, (short)vidx2, (short)vidx3);
                 }
             }
             vstart += numChunkVertices;
         }
 
+        Color colour = Color.WHITE;
+        for (int i=0; i<positions.size();++i) {
+            meshBuilder.vertex(positions.get(i), normals.get(i), colour, uvs.get(i));
+        }
+    }
+
+    private VertexWeight FindVertexWeight(List<VertexWeight> weights, int vertexNum)
+    {
+        for(VertexWeight weight : weights) {
+            if (vertexNum >= weight.startVertex && vertexNum <= weight.endVertex) {
+                return weight;
+            }
+        }
+        if (!weights.isEmpty()) {
+     //       Logger::getLogger()->log("Failed to find vertex weight\n");
+        }
+        return new VertexWeight();
     }
 
     private List<Chunk> readChunks(ByteBuffer data, int offset, int endOffset)
