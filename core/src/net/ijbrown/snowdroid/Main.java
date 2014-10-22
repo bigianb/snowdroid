@@ -33,7 +33,7 @@ public class Main extends ApplicationAdapter {
             byte[] gobData = FileUtil.read(file);
             Gob gob = new Gob(gobData);
 
-            ByteBuffer mainLumpData = gob.findEntry("chest.lmp");
+            ByteBuffer mainLumpData = gob.findEntry("barrel.lmp");
             Lump mainLump = new Lump(mainLumpData);
 
             Material material = new Material();
@@ -42,7 +42,7 @@ public class Main extends ApplicationAdapter {
             material.set(new ColorAttribute(ColorAttribute.Diffuse, red));
             material.set(new IntAttribute(IntAttribute.CullFace, GL20.GL_NONE));
 
-            ByteBuffer vifData = mainLump.findEntry("chest_large.vif");
+            ByteBuffer vifData = mainLump.findEntry("barrel.vif");
             model = new VifReader().readVif(vifData, material);
             modelInstance = new ModelInstance(model);
         } catch (IOException e) {

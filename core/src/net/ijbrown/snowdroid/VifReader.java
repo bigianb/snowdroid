@@ -51,7 +51,7 @@ public class VifReader
         int numVertices = 0;
         int numWeights = 0;
         for (Chunk chunk : chunks) {
-            numVertices += chunk.gifTag0.nloop;
+            numVertices += chunk.vertices.size();
             numWeights += chunk.vertexWeights.size();
         }
 
@@ -82,14 +82,14 @@ public class VifReader
             if ((chunk.gifTag0.prim & 0x07) != 4) {
                 throw new RuntimeException("Can only deal with tri-strips");
             }
-            for (int vertexNum = 0; vertexNum < chunk.vertices.size(); ++vertexNum) {
+            int numChunkVertices = chunk.vertices.size();
+            for (int vertexNum = 0; vertexNum < numChunkVertices; ++vertexNum) {
                 Vertex v = chunk.vertices.get(vertexNum);
                 positions.add(new Vector3(v.x / 16.0f, v.y / 16.0f, v.z / 16.0f));
                 ByteVector n = chunk.normals.get(vertexNum);
                 normals.add(new Vector3(n.x / 127.0f, n.y / 127.0f, n.z / 127.0f));
                 uvs.add(null);
             }
-            final int numChunkVertices = chunk.vertices.size();
             for (final VertexWeight vw : chunk.vertexWeights) {
                 if (vw.startVertex <= (numChunkVertices - 1)) {
                     VertexWeight vwAdjusted = new VertexWeight(vw);
@@ -101,10 +101,10 @@ public class VifReader
                     vertexWeights.add(vwAdjusted);
                 }
             }
-            int vstripLen = chunk.gifTag0.nloop;
+            final int vstripLen = chunk.gifTag0.nloop;
             int[] vstrip = new int[vstripLen];
-            int regsPerVertex = chunk.gifTag0.nreg;
-            int numVlocs = chunk.vlocs.size();
+            final int regsPerVertex = chunk.gifTag0.nreg;
+            final int numVlocs = chunk.vlocs.size();
             for (int vlocIndx = 2; vlocIndx < numVlocs; ++vlocIndx) {
                 int v = vlocIndx - 2;
                 VLoc vloc = chunk.vlocs.get(vlocIndx);
@@ -125,7 +125,7 @@ public class VifReader
                     vstrip[stripIdx] = skip ? (v | 0x8000) : v;
                 }
             }
-            int numExtraVlocs = chunk.extraVlocs == null ? 0 : chunk.extraVlocs[0];
+            final int numExtraVlocs = chunk.extraVlocs == null ? 0 : chunk.extraVlocs[0];
             for (int extraVloc = 0; extraVloc < numExtraVlocs; ++extraVloc) {
                 int idx = extraVloc * 4 + 4;
                 int stripIndxSrc = (chunk.extraVlocs[idx] & 0x1FF) / regsPerVertex;
@@ -136,6 +136,7 @@ public class VifReader
                 stripIndxDest = (chunk.extraVlocs[idx + 3] & 0x1FF) / regsPerVertex;
                 vstrip[stripIndxDest] = (chunk.extraVlocs[idx + 3] & 0x8000) | (vstrip[stripIndxSrc] & 0x1FF);
             }
+
             for (int i=2; i<vstripLen; ++i){
                 int vidx1 = vstart + (vstrip[i - 2] & 0xFF);
                 int vidx2 = vstart + (vstrip[i - 1] & 0xFF);
@@ -149,6 +150,7 @@ public class VifReader
                     Vector2 vuv1 = new Vector2(chunk.uvs.get(uv1).u / 16.0f, chunk.uvs.get(uv1).v / 16.0f);
                     Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u / 16.0f, chunk.uvs.get(uv2).v / 16.0f);
                     Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u / 16.0f, chunk.uvs.get(uv3).v / 16.0f);
+
                     if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)){
                         // There is more than one uv assignment to this vertex, so we need to duplicate it
                         int originalVIdx = vidx1;
@@ -156,6 +158,7 @@ public class VifReader
                         positions.add(positions.get(originalVIdx));
                         normals.add(normals.get(originalVIdx));
                         uvs.add(null);
+                        ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
                         if (weight.boneWeight1 > 0)
                         {
@@ -172,7 +175,7 @@ public class VifReader
                         positions.add(positions.get(originalVIdx));
                         normals.add(normals.get(originalVIdx));
                         uvs.add(null);
-
+                        ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
                         if (weight.boneWeight1 > 0)
                         {
@@ -189,7 +192,7 @@ public class VifReader
                         positions.add(positions.get(originalVIdx));
                         normals.add(normals.get(originalVIdx));
                         uvs.add(null);
-
+                        ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
                         if (weight.boneWeight1 > 0)
                         {
@@ -199,6 +202,7 @@ public class VifReader
                             vertexWeights.add(vw);
                         }
                     }
+
                     uvs.set(vidx1, vuv1);
                     uvs.set(vidx2, vuv2);
                     uvs.set(vidx3, vuv3);
