@@ -23,8 +23,10 @@ public class PalEntry
         return argb;
     }
 
-    public static PalEntry[] readPalette(byte[] fileData, int startOffset, int palw, int palh)
+    public static PalEntry[] readPalette(ByteBuffer fileDataBuffer, int startOffset, int palw, int palh)
     {
+        byte[] fileData = fileDataBuffer.data;
+        startOffset += fileDataBuffer.startOffset;
         int numEntries = palw * palh;
         PalEntry[] palette = new PalEntry[numEntries];
         for (int i = 0; i < numEntries; ++i) {

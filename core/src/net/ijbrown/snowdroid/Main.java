@@ -10,6 +10,7 @@ import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.attributes.IntAttribute;
+import com.badlogic.gdx.graphics.g3d.attributes.TextureAttribute;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
 
@@ -36,14 +37,21 @@ public class Main extends ApplicationAdapter {
             ByteBuffer mainLumpData = gob.findEntry("barrel.lmp");
             Lump mainLump = new Lump(mainLumpData);
 
-            Material material = new Material();
-            Color red = Color.GREEN;
-            material.set(new ColorAttribute(ColorAttribute.Ambient, red));
-            material.set(new ColorAttribute(ColorAttribute.Diffuse, red));
+            ByteBuffer texData = mainLump.findEntry("barrel.tex");
+            Pixmap pixmap = new TexReader().read(texData);
+            Texture texture = new Texture(pixmap);
+            Material material = new Material(TextureAttribute.createDiffuse(texture));
+
+ //           Color red = Color.RED;
+ //           material.set(new ColorAttribute(ColorAttribute.Ambient, red));
+ //           material.set(new ColorAttribute(ColorAttribute.Diffuse, red));
             material.set(new IntAttribute(IntAttribute.CullFace, GL20.GL_NONE));
 
             ByteBuffer vifData = mainLump.findEntry("barrel.vif");
             model = new VifReader().readVif(vifData, material);
+
+
+
             modelInstance = new ModelInstance(model);
         } catch (IOException e) {
             e.printStackTrace();
