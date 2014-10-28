@@ -30,7 +30,7 @@ public class VifReader
     private static final int STMASK_CMD = 0x20;
     private static final int DIRECT_CMD = 0x50;
 
-    public Model readVif(ByteBuffer vifData, Material material)
+    public Model readVif(ByteBuffer vifData, Material material, float uscale, float vscale)
     {
         int numMeshes = vifData.getUnsignedByte(0x12);
         int offset1 = vifData.getLEInt(0x24);
@@ -41,13 +41,16 @@ public class VifReader
             int offsetVerts = vifData.getLEInt(0x28 + meshNum * 4);
             int offsetEndVerts = vifData.getLEInt(0x2C + meshNum * 4);
             List<Chunk> chunks = readChunks(vifData, offsetVerts, offsetEndVerts);
-            processChunks(modelBuilder, "mesh" + meshNum, material, chunks);
+            processChunks(modelBuilder, "mesh" + meshNum, material, chunks, uscale, vscale);
         }
         return modelBuilder.end();
     }
 
-    private void processChunks(ModelBuilder modelBuilder, String id, Material material, List<Chunk> chunks)
+    private void processChunks(ModelBuilder modelBuilder, String id, Material material, List<Chunk> chunks, float uscale, float vscale)
     {
+        uscale /= 16.0f;
+        vscale /= 16.0f;
+
         int numVertices = 0;
         int numWeights = 0;
         for (Chunk chunk : chunks) {
@@ -147,9 +150,9 @@ public class VifReader
                 int uv3 = i;
 
                 if ((vstrip[i] & 0x8000) == 0) {
-                    Vector2 vuv1 = new Vector2(chunk.uvs.get(uv1).u / 16.0f, chunk.uvs.get(uv1).v / 16.0f);
-                    Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u / 16.0f, chunk.uvs.get(uv2).v / 16.0f);
-                    Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u / 16.0f, chunk.uvs.get(uv3).v / 16.0f);
+                    Vector2 vuv1 = new Vector2(chunk.uvs.get(uv1).u * uscale, chunk.uvs.get(uv1).v * vscale);
+                    Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u * uscale, chunk.uvs.get(uv2).v * vscale);
+                    Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u * uscale, chunk.uvs.get(uv3).v * vscale);
 
                     if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)){
                         // There is more than one uv assignment to this vertex, so we need to duplicate it

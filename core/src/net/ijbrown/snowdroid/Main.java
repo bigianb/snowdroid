@@ -28,7 +28,7 @@ public class Main extends ApplicationAdapter {
 	public void create () {
 
         try {
-            String dataDir = "/emu/bgda/BG/DATA/";
+            String dataDir = "/sdcard/BG/DATA/";
 
             File file = new File(dataDir, "CELLAR1.GOB");
             byte[] gobData = FileUtil.read(file);
@@ -42,19 +42,20 @@ public class Main extends ApplicationAdapter {
             Texture texture = new Texture(pixmap);
             Material material = new Material(TextureAttribute.createDiffuse(texture));
 
-            Color red = Color.RED;
-            material.set(new ColorAttribute(ColorAttribute.Ambient, red));
- //           material.set(new ColorAttribute(ColorAttribute.Diffuse, red));
             material.set(new IntAttribute(IntAttribute.CullFace, GL20.GL_NONE));
 
-            ByteBuffer vifData = mainLump.findEntry("barrel.vif");
-            model = new VifReader().readVif(vifData, material);
+            float uscale = 1.0f / pixmap.getWidth();
+            float vscale = 1.0f / pixmap.getHeight();
 
-            modelInstance = new ModelInstance(model);
+            ByteBuffer vifData = mainLump.findEntry("barrel.vif");
+            model = new VifReader().readVif(vifData, material, uscale, vscale);
+
         } catch (IOException e) {
             e.printStackTrace();
+            model = new Model();
         }
 
+        modelInstance = new ModelInstance(model);
         BoundingBox bb = new BoundingBox();
         modelInstance.calculateBoundingBox(bb);
 
