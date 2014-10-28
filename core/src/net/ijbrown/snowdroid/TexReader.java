@@ -17,13 +17,6 @@ package net.ijbrown.snowdroid;
 
 import com.badlogic.gdx.graphics.Pixmap;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-
 /**
  * Decodes a Texture.
  */
@@ -43,7 +36,7 @@ public class TexReader
 
     public Pixmap read(ByteBuffer fileDataBuffer)
     {
-        Pixmap pixmap=null;
+        Pixmap pixmap = null;
         int finalw = fileDataBuffer.getLEShort(0);
         int finalh = fileDataBuffer.getLEShort(2);
         int sourcew = finalw;
@@ -72,25 +65,41 @@ public class TexReader
             int palLen = palw * palh * 4;
             curIdx += (palLen + 0x10);
 
-            GIFTag gifTag3 = new GIFTag();
-            gifTag3.parse(fileDataBuffer, curIdx);
+            GIFTag gifTag50 = new GIFTag();
+            gifTag50.parse(fileDataBuffer, curIdx);
+            curIdx += 0x20;
 
-            int trxregOffset = findADEntry(fileDataBuffer, curIdx+0x10, gifTag3.nloop, 0x52);
-            if (trxregOffset == 0){
-                throw new RuntimeException("Failed to find TRXREG register");
+            int dbw = (sourcew / 2 + 0x07) & ~0x07;
+            int dbh = (sourceh / 2 + 0x07) & ~0x07;
+
+            int endIndex = fileDataBuffer.len;
+
+            // The following should be a loop, there are repeating sections
+            while (curIdx < endIndex - 0x10) {
+                GIFTag gifTag3 = new GIFTag();
+                gifTag3.parse(fileDataBuffer, curIdx);
+
+                int dimOffset = 0x10;
+
+                int thisRrw = fileDataBuffer.getLEShort(curIdx + dimOffset);
+                int thisRrh = fileDataBuffer.getLEShort(curIdx + dimOffset + 4);
+
+                int startx = fileDataBuffer.getLEShort(curIdx + dimOffset + 20);
+                int starty = fileDataBuffer.getLEShort(curIdx + dimOffset + 22);
+
+                curIdx += gifTag.nloop * 0x10 + 0x10;
+                pixels = readPixels32(pixels, fileDataBuffer, palette, curIdx, startx, starty, thisRrw, thisRrh, dbw,
+                                      dbh);
+                curIdx += thisRrw * thisRrh * 4;
             }
-            int rrw = fileDataBuffer.getLEShort(trxregOffset);
-            int rrh = fileDataBuffer.getLEShort(trxregOffset + 4);
 
-            pixels = readPixels32(fileDataBuffer, palette, curIdx + gifTag3.getLength(), rrw, rrh, rrw);
-
-            if (palLen != 64){
-                pixels = unswizzle8bpp(pixels, rrw * 2, rrh * 2);
-                sourcew = rrw * 2;
-                sourceh = rrh * 2;
+            if (palLen != 64) {
+                pixels = unswizzle8bpp(pixels, dbw * 2, dbh * 2);
+                sourcew = dbw * 2;
+                sourceh = dbh * 2;
             } else {
-                sourcew = rrw;
-                sourceh = rrh;
+                sourcew = dbw;
+                sourceh = dbh;
             }
 
         } else if (gifTag.nloop == 3) {
@@ -100,7 +109,7 @@ public class TexReader
 
             if (gifTag2.flg == 2) {
                 // image mode
-                pixels = readPixels32(fileDataBuffer, 0xD0, finalw, finalh);
+                pixels = readPixels32(pixels, fileDataBuffer, 0xD0, finalw, finalh);
             }
         }
         if (finalw != 0 && pixels != null) {
@@ -116,19 +125,6 @@ public class TexReader
             }
         }
         return pixmap;
-    }
-
-    private int findADEntry(ByteBuffer fileData, int dataStartIdx, int nloop, int registerId)
-    {
-        int retval = 0;
-        for (int i=0; i<nloop; ++i){
-            int reg = fileData.getLEInt(dataStartIdx + i * 0x10 + 0x08);
-            if (reg == registerId){
-                retval = dataStartIdx + i*0x10;
-                break;
-            }
-        }
-        return retval;
     }
 
     private PalEntry[] unswizzle8bpp(PalEntry[] pixels, int w, int h)
@@ -158,17 +154,22 @@ public class TexReader
     }
 
 
-    private PalEntry[] readPixels32(ByteBuffer fileDataBuffer, PalEntry[] palette, int startOffset, int rrw, int rrh, int dbw)
+    private PalEntry[] readPixels32(PalEntry[] pixels, ByteBuffer fileDataBuffer,
+                                    PalEntry[] palette, int startOffset,
+                                    int startx, int starty,
+                                    int rrw, int rrh, int dbw, int dbh)
     {
         byte[] fileData = fileDataBuffer.data;
         int idx = startOffset + fileDataBuffer.startOffset;
-        if (palette.length == 256){
-            int numDestBytes = rrh * dbw * 4;
+        if (palette.length == 256) {
+            int numDestBytes = dbh * dbw * 4;
             int widthBytes = dbw * 4;
-            PalEntry[] pixels = new PalEntry[numDestBytes];
-            for (int y = 0; y < rrh; ++y) {
+            if (pixels == null) {
+                pixels = new PalEntry[numDestBytes];
+            }
+            for (int y = 0; y < rrh && (y + starty) < dbh; ++y) {
                 for (int x = 0; x < rrw; ++x) {
-                    int destIdx = y * widthBytes + x * 4;
+                    int destIdx = (y + starty) * widthBytes + (x + startx) * 4;
                     pixels[destIdx++] = palette[fileData[idx++] & 0xFF];
                     pixels[destIdx++] = palette[fileData[idx++] & 0xFF];
                     pixels[destIdx++] = palette[fileData[idx++] & 0xFF];
@@ -178,12 +179,14 @@ public class TexReader
             return pixels;
         } else {
             int numDestBytes = rrh * dbw;
-            PalEntry[] pixels = new PalEntry[numDestBytes];
-            boolean lowbit=false;
+            if (pixels == null) {
+                pixels = new PalEntry[numDestBytes];
+            }
+            boolean lowbit = false;
             for (int y = 0; y < rrh; ++y) {
                 for (int x = 0; x < rrw; ++x) {
-                    int destIdx = y * dbw + x;
-                    if (lowbit){
+                    int destIdx = (y + starty) * dbw + x + startx;
+                    if (lowbit) {
                         pixels[destIdx] = palette[fileData[idx] >> 4 & 0x0F];
                         idx++;
                     } else {
@@ -196,11 +199,13 @@ public class TexReader
         }
     }
 
-    private PalEntry[] readPixels32(ByteBuffer fileDataBuffer, int startOffset, int w, int h)
+    private PalEntry[] readPixels32(PalEntry[] pixels, ByteBuffer fileDataBuffer, int startOffset, int w, int h)
     {
         byte[] fileData = fileDataBuffer.data;
         int numPixels = w * h;
-        PalEntry[] pixels = new PalEntry[numPixels];
+        if (null == pixels) {
+            pixels = new PalEntry[numPixels];
+        }
         int destIdx = 0;
         int endOffset = startOffset + numPixels * 4;
         for (int idx = startOffset + fileDataBuffer.startOffset; idx < endOffset; ) {
@@ -215,7 +220,6 @@ public class TexReader
 
         return pixels;
     }
-
 
 
 }

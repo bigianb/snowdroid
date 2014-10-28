@@ -42,15 +42,13 @@ public class Main extends ApplicationAdapter {
             Texture texture = new Texture(pixmap);
             Material material = new Material(TextureAttribute.createDiffuse(texture));
 
- //           Color red = Color.RED;
- //           material.set(new ColorAttribute(ColorAttribute.Ambient, red));
+            Color red = Color.RED;
+            material.set(new ColorAttribute(ColorAttribute.Ambient, red));
  //           material.set(new ColorAttribute(ColorAttribute.Diffuse, red));
             material.set(new IntAttribute(IntAttribute.CullFace, GL20.GL_NONE));
 
             ByteBuffer vifData = mainLump.findEntry("barrel.vif");
             model = new VifReader().readVif(vifData, material);
-
-
 
             modelInstance = new ModelInstance(model);
         } catch (IOException e) {
