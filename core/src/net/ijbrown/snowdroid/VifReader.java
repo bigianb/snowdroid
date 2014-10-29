@@ -11,8 +11,6 @@ import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 
-import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,7 +44,8 @@ public class VifReader
         return modelBuilder.end();
     }
 
-    private void processChunks(ModelBuilder modelBuilder, String id, Material material, List<Chunk> chunks, float uscale, float vscale)
+    private void processChunks(ModelBuilder modelBuilder, String id, Material material, List<Chunk> chunks,
+                               float uscale, float vscale)
     {
         uscale /= 16.0f;
         vscale /= 16.0f;
@@ -80,6 +79,7 @@ public class VifReader
         List<Vector3> normals = new ArrayList<Vector3>(numVertices * 2);
         List<Vector2> uvs = new ArrayList<Vector2>(numVertices * 2);
         List<VertexWeight> vertexWeights = new ArrayList<VertexWeight>(numWeights);
+        final int vindexStart = meshBuilder.lastIndex() + 1;
         int vstart = 0;
         for (Chunk chunk : chunks) {
             if ((chunk.gifTag0.prim & 0x07) != 4) {
@@ -140,7 +140,7 @@ public class VifReader
                 vstrip[stripIndxDest] = (chunk.extraVlocs[idx + 3] & 0x8000) | (vstrip[stripIndxSrc] & 0x1FF);
             }
 
-            for (int i=2; i<vstripLen; ++i){
+            for (int i = 2; i < vstripLen; ++i) {
                 int vidx1 = vstart + (vstrip[i - 2] & 0xFF);
                 int vidx2 = vstart + (vstrip[i - 1] & 0xFF);
                 int vidx3 = vstart + (vstrip[i] & 0xFF);
@@ -154,7 +154,7 @@ public class VifReader
                     Vector2 vuv2 = new Vector2(chunk.uvs.get(uv2).u * uscale, chunk.uvs.get(uv2).v * vscale);
                     Vector2 vuv3 = new Vector2(chunk.uvs.get(uv3).u * uscale, chunk.uvs.get(uv3).v * vscale);
 
-                    if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)){
+                    if (uvs.get(vidx1) != null && !uvs.get(vidx1).equals(vuv1)) {
                         // There is more than one uv assignment to this vertex, so we need to duplicate it
                         int originalVIdx = vidx1;
                         vidx1 = positions.size();
@@ -163,15 +163,14 @@ public class VifReader
                         uvs.add(null);
                         ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
-                        if (weight.boneWeight1 > 0)
-                        {
+                        if (weight.boneWeight1 > 0) {
                             VertexWeight vw = new VertexWeight(weight);
                             vw.startVertex = vidx1;
                             vw.endVertex = vidx1;
                             vertexWeights.add(vw);
                         }
                     }
-                    if (uvs.get(vidx2) != null && !uvs.get(vidx2).equals(vuv2)){
+                    if (uvs.get(vidx2) != null && !uvs.get(vidx2).equals(vuv2)) {
                         // There is more than one uv assignment to this vertex, so we need to duplicate it
                         int originalVIdx = vidx2;
                         vidx2 = positions.size();
@@ -180,15 +179,14 @@ public class VifReader
                         uvs.add(null);
                         ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
-                        if (weight.boneWeight1 > 0)
-                        {
+                        if (weight.boneWeight1 > 0) {
                             VertexWeight vw = new VertexWeight(weight);
                             vw.startVertex = vidx2;
                             vw.endVertex = vidx2;
                             vertexWeights.add(vw);
                         }
                     }
-                    if (uvs.get(vidx3) != null && !uvs.get(vidx3).equals(vuv3)){
+                    if (uvs.get(vidx3) != null && !uvs.get(vidx3).equals(vuv3)) {
                         // There is more than one uv assignment to this vertex, so we need to duplicate it
                         int originalVIdx = vidx3;
                         vidx3 = positions.size();
@@ -197,8 +195,7 @@ public class VifReader
                         uvs.add(null);
                         ++numChunkVertices;
                         VertexWeight weight = FindVertexWeight(vertexWeights, originalVIdx - vstart);
-                        if (weight.boneWeight1 > 0)
-                        {
+                        if (weight.boneWeight1 > 0) {
                             VertexWeight vw = new VertexWeight(weight);
                             vw.startVertex = vidx3;
                             vw.endVertex = vidx3;
@@ -210,27 +207,28 @@ public class VifReader
                     uvs.set(vidx2, vuv2);
                     uvs.set(vidx3, vuv3);
 
-                    meshBuilder.triangle((short)vidx1, (short)vidx2, (short)vidx3);
+                    meshBuilder.triangle((short) (vidx1 + vindexStart), (short) (vidx2 + vindexStart),
+                                         (short) (vidx3 + vindexStart));
                 }
             }
             vstart += numChunkVertices;
         }
 
         Color colour = Color.WHITE;
-        for (int i=0; i<positions.size();++i) {
+        for (int i = 0; i < positions.size(); ++i) {
             meshBuilder.vertex(positions.get(i), normals.get(i), colour, uvs.get(i));
         }
     }
 
     private VertexWeight FindVertexWeight(List<VertexWeight> weights, int vertexNum)
     {
-        for(VertexWeight weight : weights) {
+        for (VertexWeight weight : weights) {
             if (vertexNum >= weight.startVertex && vertexNum <= weight.endVertex) {
                 return weight;
             }
         }
         if (!weights.isEmpty()) {
-     //       Logger::getLogger()->log("Failed to find vertex weight\n");
+            //       Logger::getLogger()->log("Failed to find vertex weight\n");
         }
         return new VertexWeight();
     }
@@ -380,25 +378,25 @@ public class VifReader
                             for (int i = 0; i < numCommand; ++i) {
                                 VertexWeight vw = new VertexWeight();
                                 vw.startVertex = curVertex;
-                                vw.bone1 = data.getByte(offset++) / 4;
-                                vw.boneWeight1 = data.getByte(offset++);
-                                vw.bone2 = data.getByte(offset++);
+                                vw.bone1 = data.getUnsignedByte(offset++) / 4;
+                                vw.boneWeight1 = data.getUnsignedByte(offset++);
+                                vw.bone2 = data.getUnsignedByte(offset++);
                                 if (vw.bone2 == 0xFF) {
                                     // Single bone
                                     vw.boneWeight2 = 0;
-                                    int count = data.getByte(offset++);
+                                    int count = data.getUnsignedByte(offset++);
                                     curVertex += count;
                                 } else {
                                     vw.bone2 /= 4;
-                                    vw.boneWeight2 = data.getByte(offset++);
+                                    vw.boneWeight2 = data.getUnsignedByte(offset++);
                                     ++curVertex;
 
                                     if (vw.boneWeight1 + vw.boneWeight2 < 0xFF) {
                                         ++i;
-                                        vw.bone3 = data.getByte(offset++) / 4;
-                                        vw.boneWeight3 = data.getByte(offset++);
-                                        vw.bone4 = data.getByte(offset++);
-                                        int bw4 = data.getByte(offset++);
+                                        vw.bone3 = data.getUnsignedByte(offset++) / 4;
+                                        vw.boneWeight3 = data.getUnsignedByte(offset++);
+                                        vw.bone4 = data.getUnsignedByte(offset++);
+                                        int bw4 = data.getUnsignedByte(offset++);
                                         if (vw.bone4 != 0xFF) {
                                             vw.bone4 /= 4;
                                             vw.boneWeight4 = bw4;
@@ -481,7 +479,9 @@ public class VifReader
         public int boneWeight3;
         public int boneWeight4;
 
-        public VertexWeight() {}
+        public VertexWeight()
+        {
+        }
 
         public VertexWeight(final VertexWeight vw)
         {
