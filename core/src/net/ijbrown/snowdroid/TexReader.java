@@ -119,7 +119,7 @@ public class TexReader
                 for (int x = 0; x < sourcew; ++x) {
                     PalEntry pixel = pixels[y * sourcew + x];
                     if (pixel != null) {
-                        pixmap.drawPixel(x, y, pixel.argb());
+                        pixmap.drawPixel(x, y, pixel.rgba());
                     }
                 }
             }
