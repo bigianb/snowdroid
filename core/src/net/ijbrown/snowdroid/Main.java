@@ -39,7 +39,7 @@ public class Main extends ApplicationAdapter
         modelDefs.put("cratea", new ModelDef("cratea.lmp", "cratea.vif", "cratea.tex"));
         modelDefs.put("crystal", new ModelDef("crystal.lmp", "book.vif", "book.tex"));
         modelDefs.put("icespider", new ModelDef("spider.lmp", "icespider.vif", "icespider.tex"));
-        modelDefs.put("kobold", new ModelDef("kobold.lmp", "kobold.vif", "kobold.tex"));
+        modelDefs.put("kobold", new ModelDef("kobold.lmp", "kobold.vif", "kobold.tex", new String[]{"kobold_idle1.anm"}));
         modelDefs.put("ratgiant", new ModelDef("ratgiant.lmp", "giant_rat_brown.vif", "giant_rat_brown.tex"));
     }
 
@@ -71,6 +71,11 @@ public class Main extends ApplicationAdapter
 
             ByteBuffer vifData = mainLump.findEntry(modelDef.vifName);
             model = new VifReader().readVif(vifData, material, uscale, vscale);
+
+            if (modelDef.animations.size() > 0){
+                String anmName = modelDef.animations.get(0);
+                AnimData animData = AnmReader.Decode(mainLump.findEntry(anmName));
+            }
 
         } catch (IOException e) {
             e.printStackTrace();

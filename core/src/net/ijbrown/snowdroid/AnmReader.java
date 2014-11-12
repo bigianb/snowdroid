@@ -8,8 +8,12 @@ import com.badlogic.gdx.math.Vector3;
  */
 public class AnmReader
 {
-    public static AnimData Decode(byte[] data, int startOffset, int length)
+    public static AnimData Decode(ByteBuffer dataBuffer)
     {
+        final byte[] data = dataBuffer.data;
+        int startOffset = dataBuffer.startOffset;
+        int length =dataBuffer.len;
+
         int endIndex = startOffset + length;
         AnimData animData = new AnimData();
         animData.numBones = DataUtil.getLEInt(data, startOffset);
